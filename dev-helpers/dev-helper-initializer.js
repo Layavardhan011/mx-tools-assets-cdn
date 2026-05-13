@@ -36,13 +36,11 @@ window.onload = function() {
   // Only initialize OAuth if credentials are configured via URL params or window
   // process.env is not available in browser, use window.OAUTH_CONFIG or URL params
   const getOAuthConfig = () => {
-    // Check URL params first: ?oauth_client_id=xxx&oauth_client_secret=xxx
-    const urlParams = new URLSearchParams(window.location.search)
     return {
-      clientId: urlParams.get("oauth_client_id") || window.OAUTH_CLIENT_ID || "",
-      clientSecret: urlParams.get("oauth_client_secret") || window.OAUTH_CLIENT_SECRET || "",
-      realm: urlParams.get("oauth_realm") || window.OAUTH_REALM || "",
-      appName: urlParams.get("oauth_app_name") || window.OAUTH_APP_NAME || "",
+      clientId: window.OAUTH_CLIENT_ID || "",
+      clientSecret: window.OAUTH_CLIENT_SECRET || "",
+      realm: window.OAUTH_REALM || "",
+      appName: window.OAUTH_APP_NAME || "",
       scopeSeparator: " ",
       scopes: "openid profile email phone address",
       additionalQueryStringParams: {},

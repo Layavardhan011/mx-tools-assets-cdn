@@ -3,6 +3,10 @@ const express = require("express")
 const cors = require("cors")
 const fs = require("fs")
 const path = require("path")
+const helmet = require("helmet")
+const rateLimit = require("express-rate-limit")
+const RedisStore = require("rate-limit-redis").default
+const { createClient } = require("redis")
 
 // Simple .env loader
 try {
@@ -21,50 +25,74 @@ try {
 }
 
 const app = express()
-const port = 3201
+app.set("trust proxy", 1)
+app.use(helmet({
+  contentSecurityPolicy: {
+    directives: {
+      defaultSrc: ["'self'"],
+      imgSrc: ["'self'", "data:", "https://raw.githubusercontent.com"],
+      scriptSrc: ["'self'"],
+      objectSrc: ["'none'"],
+      upgradeInsecureRequests: [],
+    },
+  },
+  crossOriginResourcePolicy: { policy: "cross-origin" }
+}))
+const port = process.env.PORT || 3201
 
-// Rate limiting configuration
-const rateLimitStore = new Map()
-const RATE_LIMIT_WINDOW = 60 * 1000 // 1 minute
-const RATE_LIMIT_MAX = 100 // max requests per window
+// Redis client for rate limiting
+let redisClient
+let redisStore
 
-// Rate limiting middleware
-function rateLimitMiddleware(req, res, next) {
-  const clientIp = req.ip || req.connection.remoteAddress
-  const now = Date.now()
-  
-  if (!rateLimitStore.has(clientIp)) {
-    rateLimitStore.set(clientIp, { count: 1, resetTime: now + RATE_LIMIT_WINDOW })
-    return next()
-  }
-  
-  const clientData = rateLimitStore.get(clientIp)
-  
-  if (now > clientData.resetTime) {
-    // Reset the counter
-    rateLimitStore.set(clientIp, { count: 1, resetTime: now + RATE_LIMIT_WINDOW })
-    return next()
-  }
-  
-  if (clientData.count >= RATE_LIMIT_MAX) {
-    return res.status(429).json({ error: "Rate limit exceeded. Try again later." })
-  }
-  
-  clientData.count++
-  rateLimitStore.set(clientIp, clientData)
-  next()
+if (process.env.REDIS_URL) {
+  redisClient = createClient({ url: process.env.REDIS_URL })
+  redisClient.connect().catch(console.error)
+  redisStore = new RedisStore({
+    sendCommand: (...args) => redisClient.sendCommand(args),
+  })
 }
 
-// Apply rate limiting
-app.use(rateLimitMiddleware)
+const limiter = rateLimit({
+  windowMs: 60 * 1000, // 1 minute
+  max: 100, // max requests per window
+  standardHeaders: true,
+  legacyHeaders: false,
+  store: redisStore,
+})
 
-const REPO_OWNER = "Layavardhan011"
-const REPO_NAME = "demo-assets"
-const BRANCH = "main"
+// Apply rate limiting
+app.use(limiter)
+
+const REPO_OWNER = process.env.REPO_OWNER || "Layavardhan011"
+const REPO_NAME = process.env.REPO_NAME || "demo-assets"
+const BRANCH = process.env.BRANCH || "main"
 const GITHUB_API_BASE = `https://api.github.com/repos/${REPO_OWNER}/${REPO_NAME}`
 const GITHUB_RAW_BASE = `https://raw.githubusercontent.com/${REPO_OWNER}/${REPO_NAME}/${BRANCH}`
 
-app.use(cors())
+const ALLOWED_ORIGIN = process.env.ALLOWED_ORIGIN ? process.env.ALLOWED_ORIGIN.split(",") : []
+
+app.use(cors({
+  origin: (origin, callback) => {
+    // Allow requests with no origin (like mobile apps or curl)
+    if (!origin) return callback(null, true)
+    
+    if (ALLOWED_ORIGIN.length === 0) {
+      // In development, if no origin is set, allow localhost
+      if (process.env.NODE_ENV !== "production") {
+         return callback(null, true)
+      }
+      return callback(new Error("CORS: ALLOWED_ORIGIN not configured"))
+    }
+
+    if (ALLOWED_ORIGIN.includes(origin)) {
+      callback(null, true)
+    } else {
+      callback(new Error("Not allowed by CORS"))
+    }
+  },
+  methods: ["GET"],
+  allowedHeaders: ["Content-Type", "Authorization"]
+}))
 
 const networkMap = {
   devnet: "devnet",
@@ -95,14 +123,28 @@ function getRawUrl(network, type, id, fileName) {
   return `${GITHUB_RAW_BASE}/${base ? base + "/" : ""}${type}/${id}/${fileName}`
 }
 
+// Helper to sanitize input parameters to prevent path traversal
+function sanitize(param) {
+  if (typeof param !== "string") return ""
+  // Allow alphanumeric characters, underscores, dashes, and dots
+  const clean = param.replace(/[^a-zA-Z0-9_.-]/g, "")
+  // Prevent path traversal (..) and path separators
+  if (clean.includes("..") || clean.includes("/") || clean.includes("\\")) return ""
+  return clean
+}
+
 // Helper to extract network and type from params
 function resolveParams(params) {
+  const p1 = sanitize(params.p1)
+  const p2 = sanitize(params.p2)
+  const p3 = sanitize(params.p3)
+
   const networks = ["mainnet", "testnet", "devnet"]
-  if (networks.includes(params.p1)) {
-    return { network: params.p1, type: params.p2, id: params.p3 }
+  if (networks.includes(p1)) {
+    return { network: p1, type: p2, id: p3 }
   }
   // If p1 is not a network, it's the type, and network is mainnet
-  return { network: "mainnet", type: params.p1, id: params.p2 }
+  return { network: "mainnet", type: p1, id: p2 }
 }
 
 const GITHUB_TOKEN = process.env.GITHUB_TOKEN
@@ -242,7 +284,8 @@ app.get("/assets-cdn/:p1/:p2?", async (req, res) => {
 
 // Single Item and Icon Endpoint
 app.get("/assets-cdn/:p1/:p2/:p3?/:p4?", async (req, res) => {
-  const { p1, p2, p3, p4 } = req.params
+  const { p1, p2, p3 } = req.params
+  const p4 = sanitize(req.params.p4)
   let { network, type, id } = resolveParams({ p1, p2, p3 })
   const isIconRequest = (id && p3 && p3.startsWith("icon.")) || (p4 && p4.startsWith("icon."))
 
@@ -270,8 +313,8 @@ app.get("/assets-cdn/:p1/:p2/:p3?/:p4?", async (req, res) => {
       res.setHeader("Content-Type", ext === "svg" ? "image/svg+xml" : "image/png")
       res.send(Buffer.from(buffer))
     } catch (error) {
-      console.error(error)
-      res.status(500).send(error.message)
+      console.error(`[Error] ${req.path}:`, error.stack)
+      res.status(500).send("Internal Server Error")
     }
   } else {
     // Return from store if possible
@@ -295,8 +338,8 @@ app.get("/assets-cdn/:p1/:p2/:p3?/:p4?", async (req, res) => {
       if (error.message && error.message.includes("404")) {
         return res.status(404).send("Not found")
       }
-      console.error(error)
-      res.status(500).send(error.message)
+      console.error(`[Error] ${req.path}:`, error.stack)
+      res.status(500).send("Internal Server Error")
     }
   }
 })

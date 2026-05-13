@@ -45,9 +45,28 @@ describe("Security Tests", () => {
     })
   })
 
-  it("should have correct CORS headers on the assets proxy", () => {
-    cy.request("http://localhost:3201/assets-cdn/devnet/tokens").then((response) => {
-      expect(response.headers).to.have.property("access-control-allow-origin", "*")
+  it("should have correct CORS headers on the assets proxy for allowed origins", () => {
+    const allowedOrigin = "http://localhost:3200"
+    cy.request({
+      url: "http://localhost:3201/assets-cdn/devnet/tokens",
+      headers: {
+        Origin: allowedOrigin
+      }
+    }).then((response) => {
+      expect(response.headers).to.have.property("access-control-allow-origin", allowedOrigin)
+    })
+  })
+
+  it("should NOT have CORS headers on the assets proxy for unauthorized origins", () => {
+    cy.request({
+      url: "http://localhost:3201/assets-cdn/devnet/tokens",
+      headers: {
+        Origin: "https://unauthorized-domain.com"
+      },
+      failOnStatusCode: false
+    }).then((response) => {
+      // The CORS middleware should not include the header for unauthorized origins
+      expect(response.headers).to.not.have.property("access-control-allow-origin")
     })
   })
 
