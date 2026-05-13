@@ -1,323 +1,278 @@
- MultiversX Assets CDN - Documentation UI
+# MultiversX Assets CDN - Documentation UI & Proxy Stack
 
-## Overview
-
-Welcome to the **MultiversX Assets CDN Documentation Portal**. This repository contains a highly customized implementation of [Swagger UI](https://github.com/swagger-api/swagger-ui), specifically tailored to provide a premium, interactive API documentation experience for the MultiversX Assets ecosystem.
-
-The MultiversX Assets CDN is a critical infrastructure component that serves metadata, icons, and social information for tokens, accounts, and identities across the MultiversX network (Mainnet, Testnet, and Devnet). This UI allows developers to explore, test, and integrate these assets seamlessly into their decentralized applications (dApps).
-
-This project isn't just a simple wrapper; it's a specialized build that integrates seamlessly with the MultiversX design language, offering high performance, accessibility, and a developer-friendly environment for exploring complex blockchain asset schemas.
+Welcome to the **MultiversX Assets CDN Documentation Portal**. This repository provides a sophisticated, production-ready stack for serving, proxying, and documenting blockchain asset metadata. It is specifically designed for the MultiversX ecosystem to ensure a premium experience for developers and end-users alike.
 
 ---
 
-## Table of Contents
+## 🌐 The Role of an Assets CDN in Blockchain
 
-- [Core Features](#core-features)
-- [Prerequisites](#prerequisites)
-- [Getting Started](#getting-started)
-  - [Installation](#installation)
-  - [Development Server](#development-server)
-  - [Production Build](#production-build)
-- [Project Architecture](#project-architecture)
-  - [Build System Deep Dive](#build-system-deep-dive)
-  - [Bundle Structure](#bundle-structure)
-- [Configuration & Customization](#configuration--customization)
-  - [Styling with SASS](#styling-with-sass)
-  - [Advanced Theme Customization](#advanced-theme-customization)
-  - [The Initializer Script](#the-initializer-script)
-  - [Updating API Definitions](#updating-api-definitions)
-  - [Proxy Configuration](#proxy-configuration)
-- [Available Scripts](#available-scripts)
-- [Directory Structure](#directory-structure)
-- [Deployment Guide](#deployment-guide)
-  - [Static Hosting](#static-hosting)
-  - [CI/CD Pipeline](#cicd-pipeline)
-- [Troubleshooting](#troubleshooting)
-- [Contributing](#contributing)
-- [License](#license)
+In a decentralized ecosystem, asset metadata (such as token icons, verified names, social links, and project descriptions) is often scattered across multiple sources. The **MultiversX Assets CDN** acts as a centralized, high-performance "Source of Truth" that standardizes how this information is consumed by wallets, explorers, and decentralized applications (dApps).
+
+### Why this is critical for Blockchain:
+
+1.  **Trust & Verification:** By serving assets through a verified CDN, projects can ensure that users are seeing the official logos and metadata, reducing the risk of phishing or "look-alike" token scams. When a user sees a token logo in their wallet, they need to be certain it originates from a trusted source.
+2.  **Performance:** Fetching large icons or complex JSON metadata directly from on-chain storage or IPFS can be slow and unpredictable. This CDN proxies and caches these assets to ensure millisecond response times, crucial for high-traffic dApps and real-time trading interfaces.
+3.  **Consistency:** Standardizing the OpenAPI schema ensures that every developer in the MultiversX ecosystem can integrate token information using the same data structures, whether they are building a mobile wallet, a web-based DEX, or a governance dashboard.
+4.  **CORS & Security:** Direct requests to raw asset storage (like GitHub or S3) often run into CORS (Cross-Origin Resource Sharing) limitations. This stack includes a built-in proxy that handles security headers, rate limiting, and cross-origin policies automatically.
+5.  **Metadata Enrichment:** Beyond just serving files, this CDN can enrich metadata by aggregating data from multiple sources (e.g., combining on-chain token supply with off-chain project social links) into a single, cohesive JSON response.
 
 ---
 
-## Core Features
+## 🚀 Quick start
 
-This customized version of Swagger UI includes several enhancements beyond the standard distribution:
+Get your development environment up and running in minutes:
 
--   **Premium MultiversX Branding:** Customized color palettes, typography (Inter/Roboto), and iconography aligned with the MultiversX design system.
--   **Native Dark Mode:** A fully integrated dark theme that respects user preferences and provides a high-contrast, eye-friendly interface for developers.
--   **Standalone Layout:** Optimized for a full-page experience with a clean navigation bar and focused content area.
--   **Integrated Asset Proxy:** Built-in development proxy to bypass CORS issues when testing against local or staging asset servers.
--   **Network Switching:** Easy exploration of assets across `mainnet`, `testnet`, and `devnet` through parameterized path exploration.
--   **Custom Initializer:** A specialized `dev-helper-initializer.js` that simplifies the bootstrapping of the UI with custom plugins and OAuth2 configurations.
--   **Responsive Design:** Fully mobile-responsive layout ensuring the documentation is accessible across all device types.
--   **Optimized Performance:** Minimized bundle sizes and efficient asset loading to ensure the UI remains snappy even with large API definitions.
-
----
-
-## Prerequisites
-
-Before you begin, ensure you have the following software installed on your machine:
-
--   **Node.js:** version 18.x or 20.x (LTS recommended).
--   **npm:** version 9.x or higher.
--   **nvm (Node Version Manager):** Recommended for managing Node.js versions.
-
-To check your current versions, run:
-```bash
-node --version
-npm --version
-```
-
-If you are using `nvm`, you can simply run `nvm use` in the root directory to switch to the project's preferred Node.js version (defined in `.nvmrc`).
+1.  **Clone & Install:**
+    ```bash
+    git clone https://github.com/multiversx/mx-tools-assers-cdn.git
+    cd mx-tools-assers-cdn
+    npm install
+    ```
+2.  **Environment Setup:**
+    Copy the example environment file and add your credentials:
+    ```bash
+    cp .env.example .env
+    # Edit .env and add your GITHUB_TOKEN
+    ```
+3.  **Infrastructure:**
+    Start the Redis service required for rate limiting and state persistence:
+    ```bash
+    docker compose up -d
+    ```
+4.  **Launch:**
+    ```bash
+    npm run start-api
+    ```
+    -   **UI:** [http://localhost:3200](http://localhost:3200)
+    -   **Proxy:** [http://localhost:3201](http://localhost:3201)
 
 ---
 
-## Getting Started
+## 🏗️ Project Architecture Deep Dive
 
-### Installation
+This repository is split into two primary components that work in tandem to provide a seamless development and production experience.
 
-Clone the repository and install the dependencies using `npm`:
+### 1. Documentation UI (The Frontend)
+Built on a highly customized version of **Swagger UI**, the frontend provides:
+-   **Premium Branding:** A custom MultiversX theme with Inter and Roboto typography.
+-   **Native Dark Mode:** A fully integrated dark theme that respects system preferences and provides high contrast for code readability.
+-   **React 18 & Redux:** Leverages the latest React features for a responsive, state-driven interface.
+-   **Webpack 5 Optimization:** Includes tree-shaking, code-splitting (vendors vs. app), and CSS minification via PostCSS and Sass.
 
-```bash
-git clone https://github.com/dharitri/mx-tools-assers-cdn.git
-cd mx-tools-assers-cdn
-npm install
-```
-
-### Development Server
-
-To start the local development server with Hot Module Replacement (HMR):
-
-```bash
-npm run dev
-```
-
-The application will be available at `http://localhost:3200`. 
-By default, the dev server uses the `dev-helpers/index.html` template and loads the local `dev-helpers/swagger.json` definition.
-
-### Production Build
-
-To generate a production-ready static bundle:
-
-```bash
-npm run build
-```
-
-This command will:
-1.  Clean the `dist/` directory.
-2.  Compile SASS stylesheets into optimized CSS with autoprefixing and minification.
-3.  Bundle JavaScript assets using Webpack, including tree-shaking for unused dependencies.
-4.  Generate source maps for debugging in production environments.
-
-The resulting files in `dist/` can be served by any static web server (Nginx, Apache, S3, etc.).
+### 2. Assets Proxy (The Backend)
+A specialized Express-based service that acts as a bridge between the UI and the raw asset storage:
+-   **Background Sync:** Periodically fetches and caches asset metadata from GitHub to avoid API rate limits and ensure high availability even if the upstream source is temporarily down.
+-   **Redis Caching:** Uses Redis as a high-speed data store for cached responses and rate-limit counters, allowing for horizontal scaling across multiple instances.
+-   **Path Sanitization:** Protects against path traversal and SSRF attacks by strictly validating all incoming asset requests and rewriting paths before forwarding.
+-   **Rate Limiting:** Implements `express-rate-limit` with a Redis store to protect against DDoS and brute-force attempts.
 
 ---
 
-## Project Architecture
+## 📂 Directory Structure Breakdown
 
-### Build System Deep Dive
+Understanding the folder organization is key to efficient development:
 
-This project leverages a sophisticated build pipeline designed for scalability and developer productivity:
-
--   **Webpack 5:** The backbone of our asset management. It handles everything from JS bundling to image optimization.
--   **Babel 7:** Ensures that our modern JavaScript code runs on all target browsers by transpiling ES6+, JSX, and other modern syntax.
--   **React 18:** The core UI framework. We've optimized the rendering path to ensure the Swagger UI feels interactive and smooth.
--   **Redux & Immutable.js:** These handle the complex state management required for the OpenAPI spec, including deep nesting of schemas and real-time validation.
--   **SASS (SCSS):** We use a modular SASS architecture, allowing us to maintain a complex design system with ease.
-
-### Bundle Structure
-
-The build system produces several distinct bundles to optimize loading times:
-
-1.  **`swagger-ui-bundle.js`**: Contains the core logic and React components of Swagger UI.
-2.  **`swagger-ui-standalone-preset.js`**: Includes the standalone layout and specific preset plugins.
-3.  **`swagger-ui.css`**: The combined styles for both the core UI and our custom MultiversX theme.
-4.  **`vendors.js`**: Contains third-party dependencies (React, Redux, etc.) to leverage browser caching effectively.
-
----
-
-## Configuration & Customization
-
-### Styling with SASS
-
-The visual identity is defined in `src/style/`. You can customize the look and feel by modifying the SCSS files:
-
--   **`_variables.scss`**: This is the heart of the theme. Change `$primary-color`, `$secondary-color`, and font families here.
--   **`_dark-mode.scss`**: Specific overrides that activate when the `.dark-mode` class is applied or via media queries.
--   **`_topbar.scss`**: Controls the branding area at the top of the page.
--   **`_layout.scss`**: Adjusts margins, padding, and structural containers.
-
-### Advanced Theme Customization
-
-To add a new color token, follow this pattern in `_variables.scss`:
-
-```scss
-$mx-blue: #0033ff;
-$mx-dark-blue: #001a80;
-
-$primary-color: $mx-blue;
-```
-
-Then, use these variables in your component styles to ensure consistency throughout the application.
-
-### The Initializer Script
-
-The `dev-helpers/dev-helper-initializer.js` script is where the magic happens. It bootstraps the Swagger UI instance with specific configurations:
-
-```javascript
-const ui = SwaggerUIBundle({
-  url: "./swagger.json",
-  dom_id: "#swagger-ui",
-  deepLinking: true,
-  presets: [
-    SwaggerUIBundle.presets.apis,
-    SwaggerUIStandalonePreset
-  ],
-  plugins: [
-    SwaggerUIBundle.plugins.DownloadUrl
-  ],
-  layout: "StandaloneLayout"
-})
-```
-
-You can add custom plugins here to intercept requests, modify the UI, or add new functionality to the Swagger interface.
-
-### Updating API Definitions
-
-The API structure is defined using the OpenAPI 3.0.0 specification.
--   **Development:** Modify `dev-helpers/swagger.json` and the dev server will hot-reload the definition.
--   **Production:** You can point the UI to a remote URL by modifying the `url` parameter in your initialization script or by passing it via the query string: `?url=https://api.multiversx.com/assets/openapi.json`.
-
-### Proxy Configuration
-
-The Webpack dev server includes a powerful proxying capability to help you work around local development limitations:
-
-```javascript
-proxy: [
-  {
-    context: ["/assets-cdn"],
-    target: "http://localhost:3201",
-    changeOrigin: true,
-    pathRewrite: { "^/assets-cdn": "" },
-  },
-],
-```
-
-This allows you to make requests to `/assets-cdn/*` on your local server, which will be transparently forwarded to your actual asset service.
-
----
-
-## Available Scripts
-
-| Script | Description |
+| Directory | Purpose |
 | :--- | :--- |
-| `npm run dev` | Launches the development server on `localhost:3200`. |
-| `npm run build` | Compiles the production bundle in the `dist` folder. |
-| `npm run clean` | Safely removes the `dist` folder and temporary build artifacts. |
-| `npm run lint` | Analyzes code for potential errors and style violations. |
-| `npm run lint-fix` | Attempts to automatically resolve linting issues. |
-| `npm run test:unit` | Runs the full suite of unit tests using Jest. |
-| `npm run cy:open` | Starts the Cypress test runner for E2E validation. |
-| `npm run build-stylesheets` | Compiles only the SCSS files to CSS. |
-| `npm run serve-static` | Starts a simple HTTP server for the `dist` directory on port 3002. |
+| `config/` | Contains testing configurations (Jest) and environment-specific overrides. |
+| `cypress/` | End-to-end testing suite, including integration tests for the full UI/Proxy stack. |
+| `dev-helpers/` | Local development assets, including the assets proxy script and local JSON definitions. |
+| `dist/` | The target directory for the production build. Never modify files here manually. |
+| `src/core/` | The heart of the application, containing Redux actions, reducers, and core UI components. |
+| `src/style/` | Modular Sass implementation, including variables, theme definitions, and layout styles. |
+| `webpack/` | The complete build pipeline configuration, split into specialized modules. |
 
 ---
 
-## Directory Structure
+## 🔧 Detailed Configuration Reference
 
-```text
-mx-tools-assers-cdn/
-├── .github/            # GitHub Actions and issue templates
-├── config/             # Testing and environment configurations
-│   └── jest/           # Jest specific configuration files
-├── dev-helpers/        # Local development environment assets
-│   ├── index.html      # Dev server entry point
-│   ├── swagger.json    # Local OpenAPI specification
-│   └── dev-helper-initializer.js # UI bootstrapping logic
-├── dist/               # Production-ready static assets
-├── node_modules/       # External libraries and dependencies
-├── src/                # Primary source code directory
-│   ├── core/           # Core logic, actions, and reducers
-│   ├── standalone/     # Standalone layout and UI presets
-│   └── style/          # Modular SASS implementation
-├── webpack/            # Webpack build scripts and configurations
-│   ├── _config-builder.js # Shared build logic
-│   ├── dev.js          # Development server config
-│   └── prod.js         # Production optimization config
-├── .eslintrc.js        # JavaScript linting rules
-├── babel.config.js     # Transpilation rules for modern JS
-├── package.json        # Project metadata, scripts, and dependencies
-└── README.md           # You are here!
-```
+The application behavior is controlled via environment variables. Below is a comprehensive list of all supported configurations:
 
----
+### General Settings
+| Variable | Description | Default |
+| :--- | :--- | :--- |
+| `NODE_ENV` | Build environment (`development`, `production`, `test`) | `development` |
+| `PORT` | Port for the Assets Proxy server | `3201` |
+| `ALLOWED_ORIGIN` | CORS allowed origins (comma separated) | `http://localhost:3200` |
+| `ALLOWED_HOSTS` | Hosts allowed to access the server | `localhost,127.0.0.1` |
 
-## Deployment Guide
+### GitHub Integration
+| Variable | Description |
+| :--- | :--- |
+| `GITHUB_TOKEN` | Personal Access Token for GitHub API access (Required for high rate limits) |
+| `REPO_OWNER` | GitHub owner of the assets repository |
+| `REPO_NAME` | Name of the assets repository |
+| `BRANCH` | Branch to fetch assets from (e.g., `main`, `staging`) |
 
-### Static Hosting
-
-The output of `npm run build` is a collection of static files. These can be hosted anywhere:
-
-1.  **AWS S3 + CloudFront:** Create an S3 bucket, enable static website hosting, and point a CloudFront distribution to it for global low-latency delivery.
-2.  **GitHub Pages:** Push the `dist` folder to a `gh-pages` branch or configure a GitHub Action to deploy automatically.
-3.  **Vercel/Netlify:** Simply connect your repository and set the build command to `npm run build` and the output directory to `dist`.
-
-### CI/CD Pipeline
-
-We recommend a simple pipeline:
-1.  **Lint & Test:** Ensure code quality on every PR.
-2.  **Build:** Generate the `dist` folder in the CI environment.
-3.  **Upload:** Sync the `dist` folder with your hosting provider.
-4.  **Cache Invalidation:** If using a CDN like CloudFront, trigger a `/index.html` invalidation to ensure users see the latest version.
+### Infrastructure
+| Variable | Description | Default |
+| :--- | :--- | :--- |
+| `REDIS_URL` | Connection string for the Redis instance | `redis://127.0.0.1:6379` |
+| `REDIS_PASSWORD` | Password for the Redis instance (if applicable) | `null` |
 
 ---
 
-## Troubleshooting
+## 📊 API Schema Examples
 
-### Common Setup Issues
+The CDN serves standardized JSON metadata. Below are examples of the schemas you can expect:
 
-**1. "Module not found" errors after update**
-If you pull new changes and see errors, your `node_modules` might be out of sync.
-```bash
-rm -rf node_modules
-npm install
-```
-
-**2. Port 3200 is already in use**
-If you have another process running on the default port, you can change it in `webpack/dev.js`:
-```javascript
-devServer: {
-  port: 3205, // Change this to an available port
+### Token Metadata (`/tokens/{identifier}.json`)
+```json
+{
+  "identifier": "EGLD",
+  "name": "eGold",
+  "ticker": "EGLD",
+  "decimals": 18,
+  "assets": {
+    "svg": "https://cdn.multiversx.com/tokens/egld.svg",
+    "png": "https://cdn.multiversx.com/tokens/egld.png"
+  },
+  "social": {
+    "website": "https://multiversx.com",
+    "twitter": "https://twitter.com/multiversx"
+  }
 }
 ```
 
-**3. Styles aren't updating in the browser**
-Check if there are any SASS compilation errors in your terminal. If the terminal is clean, try a hard refresh (`Cmd+Shift+R` or `Ctrl+F5`) to bypass browser cache.
+### Identity Metadata (`/identities/{address}.json`)
+```json
+{
+  "address": "erd1...",
+  "name": "Staking Provider X",
+  "avatar": "https://cdn.multiversx.com/identities/staking-x.png",
+  "description": "Premium staking services for the MultiversX network.",
+  "verified": true
+}
+```
 
 ---
 
-## Contributing
+## 🛠️ Build System Internals
 
-The MultiversX community thrives on collaboration! Whether you're fixing a bug, improving the theme, or adding new features, we value your input.
+Our build system is designed for high performance and modularity. Here is a breakdown of the Webpack configurations:
 
-1.  **Fork** the project on GitHub.
+-   **`webpack/core.js`**: Defines the base bundling logic for the Swagger UI core, including React and Redux integrations.
+-   **`webpack/dev.js`**: Configures the `webpack-dev-server` with Hot Module Replacement (HMR) and the API proxy middleware.
+-   **`webpack/stylesheets.js`**: Handles the compilation of Sass files into optimized CSS. It includes autoprefixing and minification for production.
+-   **`webpack/standalone.js`**: Bundles the standalone layout version of the UI, which includes the top bar and sidebar navigation.
+
+---
+
+## 🧪 Testing & Quality Assurance
+
+We maintain high code quality standards through a multi-layered testing strategy:
+
+### `npm run lint`
+Performs static analysis on the codebase using ESLint and Stylelint. It checks for:
+-   JavaScript/JSX syntax errors and best practices.
+-   Sass/SCSS styling consistency using modular variables.
+-   Accessibility (a11y) violations in the UI components.
+
+### `npm run lint-fix`
+Automatically resolves formatting and minor logic issues found by the linters, ensuring a consistent code style across the project.
+
+### `npm run test:unit`
+Executes the Jest test suite. This includes:
+-   **Component Testing:** Verifying that UI elements render correctly under different states.
+-   **Logic Testing:** Ensuring that the proxy's sanitization and sync logic works as expected.
+-   **Snapshot Testing:** Detecting unintended changes in the UI structure.
+
+### `npm run cy:open` / `npm run cy:run`
+Starts Cypress for End-to-End (E2E) testing. This validates the entire flow from the user perspective:
+1.  UI loads correctly in the browser.
+2.  Requests are successfully proxied to the backend.
+3.  Asset metadata is correctly displayed and formatted.
+
+---
+
+## 💻 Recommended Development Environment
+
+To ensure the best experience when contributing to this project, we recommend the following VS Code setup:
+
+### Recommended Extensions
+-   **ESLint:** `dbaeumer.vscode-eslint`
+-   **Prettier:** `esbenp.prettier-vscode`
+-   **Stylelint:** `stylelint.vscode-stylelint`
+-   **Sass:** `syler.sass-indented`
+-   **GitLens:** `eamodio.gitlens`
+
+### Settings Snippet (`.vscode/settings.json`)
+```json
+{
+  "editor.formatOnSave": true,
+  "editor.defaultFormatter": "esbenp.prettier-vscode",
+  "editor.codeActionsOnSave": {
+    "source.fixAll.eslint": true,
+    "source.fixAll.stylelint": true
+  }
+}
+```
+
+---
+
+## 🚢 Deployment Guide
+
+### Static Hosting (The UI)
+The output of `npm run build` is entirely static.
+1.  **AWS S3:** Upload the contents of the `dist/` folder to an S3 bucket configured for static website hosting.
+2.  **CloudFront:** Place a CloudFront distribution in front of the S3 bucket to enable HTTPS and global edge caching.
+3.  **Vercel/Netlify:** Simply connect your repository and set the build command to `npm run build` and the output directory to `dist`.
+
+### Infrastructure (The Proxy)
+The Proxy should be deployed as a Node.js service (e.g., via PM2, Docker, or Kubernetes).
+1.  Ensure the environment has access to a Redis instance.
+2.  Set `ALLOWED_ORIGIN` to your production UI domain.
+3.  Configure a reverse proxy (like Nginx) to handle SSL termination and load balancing.
+
+---
+
+## 🔍 Troubleshooting & FAQ
+
+**Q: "Unauthorized" errors in the Proxy log?**
+A: Ensure your `GITHUB_TOKEN` in the `.env` file is valid and has the `repo` scope. Without a token, GitHub strictly limits API requests, which will cause the background sync to fail.
+
+**Q: Redis Connection Refused?**
+A: This service depends on Redis for rate limiting. If you are running locally, ensure the Redis container is active: `docker ps`. If it's missing, run `docker compose up -d`.
+
+**Q: Styles are not updating in the browser?**
+A: Webpack's HMR usually handles this. If it fails, try a hard refresh (`Ctrl+F5`) or restart the dev server to clear the memory cache.
+
+---
+
+## 📚 Glossary of Terms
+
+-   **CDN (Content Delivery Network):** A system of distributed servers that deliver web content to users based on their geographic location.
+-   **HMR (Hot Module Replacement):** A Webpack feature that exchanges, adds, or removes modules while an application is running, without a full reload.
+-   **CORS (Cross-Origin Resource Sharing):** A security mechanism that allows restricted resources on a web page to be requested from another domain.
+-   **SSRF (Server-Side Request Forgery):** A security vulnerability where an attacker can cause the server-side application to make HTTP requests to an arbitrary domain.
+-   **OAS (OpenAPI Specification):** A standard for describing RESTful APIs in a machine-readable format.
+
+---
+
+## 🗺️ Future Roadmap
+
+-   [ ] **Multi-CDN Support:** Support for serving assets from IPFS and Arweave alongside GitHub.
+-   [ ] **Custom Theme Editor:** A browser-based tool to customize the MultiversX theme tokens in real-time.
+-   [ ] **GraphQL Support:** A GraphQL endpoint for more flexible asset metadata querying.
+-   [ ] **Automated Asset Audits:** Built-in checks for image resolution, transparency, and aspect ratio compliance.
+
+---
+
+## 🤝 Contributing
+
+We welcome contributions from the MultiversX community!
+1.  **Fork** the repository on GitHub.
 2.  **Clone** your fork to your local machine.
-3.  **Create a branch** for your changes.
+3.  **Create a branch** for your changes (`git checkout -b feature/amazing-feature`).
 4.  **Write code** and ensure it's well-tested.
 5.  **Submit a Pull Request** with a clear description of the changes.
 
 ---
 
-## License
+## 📄 License
 
-This project is licensed under the **Apache-2.0 License**. This means you are free to use, modify, and distribute the software, provided you include the original license and copyright notice. See the [LICENSE](LICENSE) file for the full text.
-
----
-
-## Acknowledgments
-
--   **Swagger API Team:** For providing the foundation of this incredible tool.
--   **MultiversX Foundation:** For their vision and support of the developer ecosystem.
--   **Community Contributors:** Who help keep our tools sharp and accessible.
+This project is licensed under the **Apache-2.0 License**. See the [LICENSE](LICENSE) file for more details.
 
 ---
-*Built with passion for the MultiversX ecosystem. 🛠️✨*
+
+*Built with passion by the MultiversX Developer Community. 🛠️✨*

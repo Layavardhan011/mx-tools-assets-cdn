@@ -48,7 +48,7 @@
     "clean": "rimraf ./dist",
     "dev": "cross-env NODE_ENV=development BABEL_ENV=development BROWSERSLIST_ENV=browser-development webpack serve --config webpack/dev.js",
     "proxy": "node dev-helpers/assets-proxy.js",
-    "dev:all": "run-p dev proxy",
+    "start-api": "run-p dev proxy",
     "deps-license": "license-checker --production --csv --out $npm_package_deps_check_dir/licenses.csv && license-checker --development --csv --out $npm_package_deps_check_dir/licenses-dev.csv",
     "deps-size": "cross-env NODE_ENV=development webpack -p --config webpack/bundle.js --json | webpack-bundle-size-analyzer >| $npm_package_deps_check_dir/sizes.txt",
     "deps-check": "run-s deps-license deps-size",
