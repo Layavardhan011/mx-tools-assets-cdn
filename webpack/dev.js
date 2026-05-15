@@ -3,6 +3,7 @@
  */
 
 const path = require("path")
+require("dotenv").config({ path: path.join(__dirname, "../.env") })
 const ReactRefreshWebpackPlugin = require("@pmmmwh/react-refresh-webpack-plugin")
 const HtmlWebpackPlugin = require("html-webpack-plugin")
 const {
@@ -63,7 +64,7 @@ const devConfig = configBuilder(
       // ===============================================================================
       allowedHosts: process.env.ALLOWED_HOSTS
         ? process.env.ALLOWED_HOSTS.split(",")
-        : ["localhost", "127.0.0.1"], // Default: local development only
+        : ["localhost", "127.0.0.1", ".trycloudflare.com"], // Allow Cloudflare tunnels
 
       // ===============================================================================
       // ISSUE 2: CORS CONFIGURATION - Security fix to restrict cross-origin requests
@@ -79,10 +80,93 @@ const devConfig = configBuilder(
       // IMPORTANT: The * (wildcard) allows any website to make requests to your API
       // Only use * if your API is completely public and has no sensitive data
       // ===============================================================================
-      headers: {
-        "Access-Control-Allow-Origin": process.env.ALLOWED_ORIGIN || "http://localhost:3000,http://localhost:3200",
-        "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
-        "Access-Control-Allow-Headers": "Content-Type, Authorization",
+      setupMiddlewares: (middlewares, devServer) => {
+        if (!devServer) {
+          throw new Error("webpack-dev-server is not defined")
+        }
+
+        // 1. Hide X-Powered-By to prevent information leakage
+        if (devServer.app && devServer.app.disable) {
+          devServer.app.disable("x-powered-by")
+        }
+
+        // Security Header Helper: Ensures headers are set even on errors/blocks
+        const applySecurityHeaders = (req, res) => {
+          if (res.headersSent) return
+          const allowed = (process.env.ALLOWED_ORIGIN || "").split(",")
+          const origin = req.headers.origin
+          const allowOrigin = allowed.includes(origin) ? origin : allowed[0] || "http://localhost:3200"
+
+          res.setHeader("Access-Control-Allow-Origin", allowOrigin)
+          res.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+          res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization")
+          res.setHeader("X-Content-Type-Options", "nosniff")
+          res.setHeader("X-Frame-Options", "DENY")
+          res.setHeader("Strict-Transport-Security", "max-age=31536000; includeSubDomains")
+          res.setHeader("Referrer-Policy", "no-referrer-when-downgrade")
+          res.setHeader("Permissions-Policy", "camera=(), microphone=(), geolocation=(), interest-cohort=()")
+          res.setHeader("Cross-Origin-Embedder-Policy", "unsafe-none")
+          res.setHeader("Cross-Origin-Opener-Policy", "same-origin")
+          res.setHeader("Cross-Origin-Resource-Policy", "cross-origin")
+          res.setHeader("X-Permitted-Cross-Domain-Policies", "none")
+          res.setHeader(
+            "Content-Security-Policy",
+            "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https://raw.githubusercontent.com; connect-src 'self' https://*.trycloudflare.com;"
+          )
+        }
+
+        // 2. Simple In-Memory Rate Limiter
+        const rateLimit = new Map()
+        const LIMIT_PER_MINUTE = 500 // Increased limit to allow full security scans
+        const WINDOW_MS = 60000
+
+        // 3. Consolidated Security Shield (Firewall + Rate Limit + Headers)
+        middlewares.unshift({
+          name: "security-shield",
+          path: "*",
+          middleware: (req, res, next) => {
+            // Apply headers immediately to every request
+            applySecurityHeaders(req, res)
+
+            const ip = req.ip || req.headers["x-forwarded-for"] || req.socket.remoteAddress || "unknown"
+            const now = Date.now()
+
+            // Rate Limit Logic
+            const userData = rateLimit.get(ip) || { count: 0, start: now }
+            if (now - userData.start > WINDOW_MS) {
+              userData.count = 1
+              userData.start = now
+            } else {
+              userData.count++
+            }
+            rateLimit.set(ip, userData)
+
+            if (userData.count > LIMIT_PER_MINUTE) {
+              return res.status(429).send("Too Many Requests - Security Limit Triggered")
+            }
+
+            // Firewall Logic: Block malicious bot requests (Encoded and Raw)
+            const fullPath = decodeURIComponent(req.originalUrl || req.url || "")
+            if (
+              fullPath.includes("${") ||
+              fullPath.includes("..") ||
+              fullPath.includes("<script") ||
+              fullPath.includes("\0") ||
+              fullPath.includes("\\")
+            ) {
+              return res.status(403).send("Forbidden - Malicious Request Blocked")
+            }
+
+            // Handle Preflight OPTIONS requests
+            if (req.method === "OPTIONS") {
+              return res.status(204).end()
+            }
+
+            next()
+          },
+        })
+
+        return middlewares
       },
       port: 3200,
       host: "0.0.0.0",
@@ -90,6 +174,7 @@ const devConfig = configBuilder(
       static: {
         directory: path.resolve(projectBasePath, "dev-helpers"),
         publicPath: "/",
+        serveIndex: false,
       },
       client: {
         logging: "info",

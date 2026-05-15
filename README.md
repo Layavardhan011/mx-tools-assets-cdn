@@ -40,11 +40,19 @@ Get your development environment up and running in minutes:
     docker compose up -d
     ```
 4.  **Launch:**
-    ```bash
-    npm run start-api
-    ```
+    -   **Development Mode** (Hot Reloading + Full Logs):
+        ```bash
+        npm run start-api
+        ```
+    -   **Production Mode** (Optimized Bundles + Secure Logs):
+        ```bash
+        npm run start-api:prod
+        ```
     -   **UI:** [http://localhost:3200](http://localhost:3200)
     -   **Proxy:** [http://localhost:3201](http://localhost:3201)
+
+> [!TIP]
+> **Production Mode** enables high-performance caching in Express, minifies frontend assets, and sanitizes logs to prevent internal information leakage. Always use this mode for public-facing deployments.
 
 ---
 

@@ -4,6 +4,7 @@ services:
   redis:
     image: redis:latest
     container_name: mx-tools-redis
+    command: redis-server --requirepass ${REDIS_PASSWORD:-mx_tools_secure_pass}
     ports:
       - "127.0.0.1:6379:6379"
     volumes:

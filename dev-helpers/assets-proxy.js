@@ -45,7 +45,15 @@ let redisClient
 let redisStore
 
 if (process.env.REDIS_URL) {
-  redisClient = createClient({ url: process.env.REDIS_URL })
+  const redisOptions = { url: process.env.REDIS_URL }
+  if (process.env.REDIS_PASSWORD) {
+    redisOptions.password = process.env.REDIS_PASSWORD
+  } else if (!redisOptions.url.includes(":") || (redisOptions.url.includes("@") && !redisOptions.url.split("@")[0].includes(":"))) {
+    // Fallback to default password if not in URL and not provided separately
+    redisOptions.password = "mx_tools_secure_pass"
+  }
+  
+  redisClient = createClient(redisOptions)
   redisClient.connect().catch(console.error)
   redisStore = new RedisStore({
     sendCommand: (...args) => redisClient.sendCommand(args),
@@ -84,7 +92,7 @@ app.use(cors({
       return callback(new Error("CORS: ALLOWED_ORIGIN not configured"))
     }
 
-    if (ALLOWED_ORIGIN.includes(origin)) {
+    if (ALLOWED_ORIGIN.includes(origin) || (origin && origin.endsWith(".trycloudflare.com"))) {
       callback(null, true)
     } else {
       callback(new Error("Not allowed by CORS"))
@@ -203,6 +211,11 @@ async function syncCollection(network, type) {
     const response = await githubFetch(`${GITHUB_API_BASE}/contents/${path}?ref=${BRANCH}`)
     const items = await response.json()
     
+    if (!Array.isArray(items)) {
+      console.warn(`[Sync] Expected array from GitHub but got: ${typeof items}. Skipping ${network}/${type}`)
+      return
+    }
+
     const tasks = items.map(item => async () => {
       if (type === "accounts" && item.name.endsWith(".json") && item.name !== "icons") {
         const address = item.name.replace(".json", "")
@@ -300,7 +313,7 @@ app.get("/assets-cdn/:p1/:p2/:p3?/:p4?", async (req, res) => {
       if (type === "accounts") {
         const accountPath = getGithubPath(network, type, id)
         const accountData = await fetch(`${GITHUB_RAW_BASE}/${accountPath}`).then(r => r.json())
-        const iconName = accountData.icon || id
+        const iconName = sanitize(accountData.icon || id)
         rawUrl = getRawUrl(network, type, id, `icons/${iconName}.${ext}`)
       } else {
         rawUrl = getRawUrl(network, type, id, `logo.${ext}`)
@@ -313,7 +326,8 @@ app.get("/assets-cdn/:p1/:p2/:p3?/:p4?", async (req, res) => {
       res.setHeader("Content-Type", ext === "svg" ? "image/svg+xml" : "image/png")
       res.send(Buffer.from(buffer))
     } catch (error) {
-      console.error(`[Error] ${req.path}:`, error.stack)
+      const errorMsg = process.env.NODE_ENV === "production" ? error.message : error.stack
+      console.error(`[Error] ${req.path}:`, errorMsg)
       res.status(500).send("Internal Server Error")
     }
   } else {
@@ -338,7 +352,8 @@ app.get("/assets-cdn/:p1/:p2/:p3?/:p4?", async (req, res) => {
       if (error.message && error.message.includes("404")) {
         return res.status(404).send("Not found")
       }
-      console.error(`[Error] ${req.path}:`, error.stack)
+      const errorMsg = process.env.NODE_ENV === "production" ? error.message : error.stack
+      console.error(`[Error] ${req.path}:`, errorMsg)
       res.status(500).send("Internal Server Error")
     }
   }
@@ -356,6 +371,7 @@ if (typeof module !== "undefined") {
     getGithubPath,
     getRawUrl,
     resolveParams,
-    networkMap
+    networkMap,
+    sanitize
   }
 }
