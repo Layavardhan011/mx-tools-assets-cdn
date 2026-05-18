@@ -3,6 +3,7 @@ const express = require("express")
 const cors = require("cors")
 const fs = require("fs")
 const path = require("path")
+const compression = require("compression")
 const helmet = require("helmet")
 const rateLimit = require("express-rate-limit")
 const RedisStore = require("rate-limit-redis").default
@@ -26,6 +27,9 @@ try {
 
 const app = express()
 app.set("trust proxy", 1)
+app.disable("x-powered-by")
+app.use(compression())
+
 app.use(helmet({
   contentSecurityPolicy: {
     directives: {
@@ -79,28 +83,30 @@ const GITHUB_RAW_BASE = `https://raw.githubusercontent.com/${REPO_OWNER}/${REPO_
 
 const ALLOWED_ORIGIN = process.env.ALLOWED_ORIGIN ? process.env.ALLOWED_ORIGIN.split(",") : []
 
-app.use(cors({
+const corsOptions = {
   origin: (origin, callback) => {
-    // Allow requests with no origin (like mobile apps or curl)
     if (!origin) return callback(null, true)
-    
-    if (ALLOWED_ORIGIN.length === 0) {
-      // In development, if no origin is set, allow localhost
-      if (process.env.NODE_ENV !== "production") {
-         return callback(null, true)
-      }
-      return callback(new Error("CORS: ALLOWED_ORIGIN not configured"))
+    if (ALLOWED_ORIGIN.includes("*")) {
+      return callback(null, true)
     }
-
+    if (ALLOWED_ORIGIN.length === 0) {
+      if (process.env.NODE_ENV !== "production") {
+        return callback(null, true)
+      }
+      // In production, if no allowlist is configured, do not emit CORS headers.
+      return callback(null, false)
+    }
     if (ALLOWED_ORIGIN.includes(origin) || (origin && origin.endsWith(".trycloudflare.com"))) {
       callback(null, true)
     } else {
-      callback(new Error("Not allowed by CORS"))
+      // For unauthorized origins, do not emit CORS headers (do not hard-fail the request).
+      callback(null, false)
     }
   },
-  methods: ["GET"],
-  allowedHeaders: ["Content-Type", "Authorization"]
-}))
+  methods: ["GET", "OPTIONS"],
+  allowedHeaders: ["Content-Type", "Authorization"],
+}
+app.use(cors(corsOptions))
 
 const networkMap = {
   devnet: "devnet",
@@ -222,12 +228,13 @@ async function syncCollection(network, type) {
         try {
           // Use item.download_url which doesn't require API rate limit for raw content
           const fileContent = await fetch(item.download_url).then(r => r.json())
-          return { 
-            address, 
-            ...fileContent,
-            iconPng: `/assets-cdn/${network}/accounts/${address}/icon.png`,
-            iconSvg: `/assets-cdn/${network}/accounts/${address}/icon.svg`
+          const accountData = { address, ...fileContent }
+          // Only attach icon URLs if the account defines a custom icon key (Production Parity)
+          if (fileContent.icon) {
+            accountData.iconPng = `/assets-cdn/${network}/accounts/${address}/icon.png`
+            accountData.iconSvg = `/assets-cdn/${network}/accounts/${address}/icon.svg`
           }
+          return accountData
         } catch (e) { 
           console.error(`[Sync] Failed account ${address}: ${e.message}`)
           return null 
@@ -281,6 +288,35 @@ async function syncAll() {
 syncAll()
 setInterval(syncAll, SYNC_INTERVAL)
 
+// Helper to format absolute URLs dynamically matching the requesting client's host/domain
+function formatAbsoluteUrls(data, req) {
+  if (!data) return data
+  const host = req.headers["x-forwarded-host"] || req.get("host") || "localhost:3200"
+  const protocol = req.headers["x-forwarded-proto"] || req.protocol || "http"
+  const baseUrl = `${protocol}://${host}`
+
+  const process = (val) => {
+    if (!val) return val
+    if (Array.isArray(val)) {
+      return val.map(process)
+    }
+    if (typeof val === "object") {
+      const copy = { ...val }
+      for (const key in copy) {
+        if (typeof copy[key] === "string" && copy[key].startsWith("/assets-cdn/")) {
+          copy[key] = `${baseUrl}${copy[key]}`
+        } else if (typeof copy[key] === "object" && copy[key] !== null) {
+          copy[key] = process(copy[key])
+        }
+      }
+      return copy
+    }
+    return val
+  }
+
+  return process(data)
+}
+
 // Collection Endpoint
 app.get("/assets-cdn/:p1/:p2?", async (req, res) => {
   const { p1, p2 } = req.params
@@ -288,7 +324,7 @@ app.get("/assets-cdn/:p1/:p2?", async (req, res) => {
   
   if (store[network] && store[network][type]) {
     console.log(`[API] Serving ${network}/${type} (${store[network][type].length} items)`)
-    return res.json(store[network][type])
+    return res.json(formatAbsoluteUrls(store[network][type], req))
   }
   
   console.log(`[API] Requested ${network}/${type} but data is not yet available`)
@@ -335,7 +371,7 @@ app.get("/assets-cdn/:p1/:p2/:p3?/:p4?", async (req, res) => {
     if (store[network] && store[network][type]) {
       const key = type === "accounts" ? "address" : (type === "tokens" ? "identifier" : "identity")
       const item = store[network][type].find(i => i[key] === id)
-      if (item) return res.json(item)
+      if (item) return res.json(formatAbsoluteUrls(item, req))
     }
 
     // Fallback to direct fetch
@@ -346,7 +382,18 @@ app.get("/assets-cdn/:p1/:p2/:p3?/:p4?", async (req, res) => {
       const response = await githubFetch(`${GITHUB_RAW_BASE}/${path}`)
       const content = await response.json()
       const key = type === "accounts" ? "address" : (type === "tokens" ? "identifier" : "identity")
-      res.json({ [key]: id, ...content })
+      const result = { [key]: id, ...content }
+      
+      if (type === "tokens") {
+        result.pngUrl = `/assets-cdn/${network}/tokens/${id}/icon.png`
+        result.svgUrl = `/assets-cdn/${network}/tokens/${id}/icon.svg`
+      } else if (type === "identities") {
+        result.avatar = `/assets-cdn/${network}/identities/${id}/icon.png`
+      } else if (type === "accounts" && content.icon) {
+        result.iconPng = `/assets-cdn/${network}/accounts/${id}/icon.png`
+        result.iconSvg = `/assets-cdn/${network}/accounts/${id}/icon.svg`
+      }
+      res.json(formatAbsoluteUrls(result, req))
     } catch (error) {
       // Check if it's a 404 from GitHub - return 404 instead of 500
       if (error.message && error.message.includes("404")) {
@@ -360,8 +407,9 @@ app.get("/assets-cdn/:p1/:p2/:p3?/:p4?", async (req, res) => {
 })
 
 if (require.main === module) {
-  app.listen(port, () => {
-    console.log(`GitHub Assets Proxy running at http://localhost:${port}`)
+  const listenHost = process.env.ASSETS_PROXY_HOST || "127.0.0.1"
+  app.listen(port, listenHost, () => {
+    console.log(`GitHub Assets Proxy running at http://${listenHost}:${port}`)
   })
 }
 

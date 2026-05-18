@@ -3,6 +3,7 @@
  */
 
 const path = require("path")
+const http = require("http")
 require("dotenv").config({ path: path.join(__dirname, "../.env") })
 const ReactRefreshWebpackPlugin = require("@pmmmwh/react-refresh-webpack-plugin")
 const HtmlWebpackPlugin = require("html-webpack-plugin")
@@ -95,11 +96,18 @@ const devConfig = configBuilder(
           if (res.headersSent) return
           const allowed = (process.env.ALLOWED_ORIGIN || "").split(",")
           const origin = req.headers.origin
-          const allowOrigin = allowed.includes(origin) ? origin : allowed[0] || "http://localhost:3200"
+          const allowAll = process.env.ALLOWED_ORIGIN === "*"
+          const allowOrigin = allowAll
+            ? "*"
+            : (allowed.includes(origin) ? origin : allowed[0] || "http://localhost:3200")
 
           res.setHeader("Access-Control-Allow-Origin", allowOrigin)
           res.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
           res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization")
+          if (!allowAll) {
+            // When echoing Origin (or choosing from an allowlist), ensure caches do not mix responses across origins.
+            res.setHeader("Vary", "Origin")
+          }
           res.setHeader("X-Content-Type-Options", "nosniff")
           res.setHeader("X-Frame-Options", "DENY")
           res.setHeader("Strict-Transport-Security", "max-age=31536000; includeSubDomains")
@@ -120,7 +128,42 @@ const devConfig = configBuilder(
         const LIMIT_PER_MINUTE = 500 // Increased limit to allow full security scans
         const WINDOW_MS = 60000
 
-        // 3. Consolidated Security Shield (Firewall + Rate Limit + Headers)
+        // 3. Assets CDN direct proxy bypass to prevent serve-static/send race conditions and "Can't set headers after they are sent" crashes.
+        middlewares.unshift({
+          name: "assets-cdn-proxy-bypass",
+          path: "/assets-cdn",
+          middleware: (req, res) => {
+            const targetHost = "127.0.0.1"
+            const targetPort = 3201
+
+            const proxyReq = http.request(
+              {
+                host: targetHost,
+                port: targetPort,
+                path: req.originalUrl || req.url,
+                method: req.method,
+                headers: req.headers,
+              },
+              (proxyRes) => {
+                if (!res.headersSent) {
+                  res.writeHead(proxyRes.statusCode, proxyRes.headers)
+                }
+                proxyRes.pipe(res)
+              }
+            )
+
+            proxyReq.on("error", (err) => {
+              console.error("[Proxy Bypass Error]:", err.message)
+              if (!res.headersSent) {
+                res.status(502).send("Bad Gateway - Assets Proxy is offline or synchronizing")
+              }
+            })
+
+            req.pipe(proxyReq)
+          }
+        })
+
+        // 4. Consolidated Security Shield (Firewall + Rate Limit + Headers)
         middlewares.unshift({
           name: "security-shield",
           path: "*",
