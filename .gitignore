@@ -1,3 +1,6 @@
+# Environment (contains secrets, DO NOT commit)
+.env
+
 node_modules
 .idea
 .vscode
@@ -12,6 +15,7 @@ chromedriver.log
 test/e2e/db.json
 docs/_book
 dev-helpers/examples
+dist
 
 # dist
 flavors/**/dist/*
@@ -23,3 +27,4 @@ dist/log*
 # Cypress
 test/e2e-cypress/screenshots
 test/e2e-cypress/videos
+cypress/screenshots/*

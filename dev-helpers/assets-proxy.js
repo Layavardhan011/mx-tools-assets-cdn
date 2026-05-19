@@ -52,9 +52,6 @@ if (process.env.REDIS_URL) {
   const redisOptions = { url: process.env.REDIS_URL }
   if (process.env.REDIS_PASSWORD) {
     redisOptions.password = process.env.REDIS_PASSWORD
-  } else if (!redisOptions.url.includes(":") || (redisOptions.url.includes("@") && !redisOptions.url.split("@")[0].includes(":"))) {
-    // Fallback to default password if not in URL and not provided separately
-    redisOptions.password = "mx_tools_secure_pass"
   }
   
   redisClient = createClient(redisOptions)
@@ -67,7 +64,7 @@ if (process.env.REDIS_URL) {
 const limiter = rateLimit({
   windowMs: 60 * 1000, // 1 minute
   max: 100, // max requests per window
-  standardHeaders: true,
+  standardHeaders: false,
   legacyHeaders: false,
   store: redisStore,
 })
@@ -113,6 +110,112 @@ const networkMap = {
   testnet: "testnet",
   mainnet: ""
 }
+
+const ALLOWED_CDN_HEADERS = [
+  "access-control-allow-origin",
+  "cf-cache-status",
+  "cf-ray",
+  "cluster",
+  "content-encoding",
+  "content-type",
+  "date",
+  "etag",
+  "server",
+  "strict-transport-security",
+  "x-powered-by",
+]
+
+// Align all response headers with production CDN
+app.use("/assets-cdn", (req, res, next) => {
+  const CDN_HEADERS = {
+    static: {
+      "access-control-allow-origin": process.env.CDN_CORS_ORIGIN || "*",
+      "x-powered-by": process.env.CDN_X_POWERED_BY || "Express",
+      "strict-transport-security": process.env.CDN_STS || "max-age=31536000; includeSubDomains",
+      "server": process.env.CDN_SERVER || "cloudflare",
+    }
+  }
+
+  Object.entries(CDN_HEADERS.static).forEach(([name, val]) => {
+    res.setHeader(name, val)
+  })
+
+  const datacenters = ["AMS", "CDG", "HYD", "OTP", "LHR", "FRA", "SJC", "IAD"]
+  let datacenter = process.env.CDN_CF_RAY_SUFFIX
+
+  if (!datacenter) {
+    const incomingCfRay = req.headers["cf-ray"]
+    if (incomingCfRay && typeof incomingCfRay === "string") {
+      const parts = incomingCfRay.split("-")
+      const suffix = parts[parts.length - 1]
+      if (suffix && suffix.length === 3) datacenter = suffix.toUpperCase()
+    }
+  }
+
+  if (!datacenter) {
+    const incomingCountry = req.headers["cf-ipcountry"]
+    if (incomingCountry && typeof incomingCountry === "string") {
+      const countryToDc = {
+        "IN": "HYD", "RO": "OTP", "FR": "CDG", "NL": "AMS",
+        "GB": "LHR", "DE": "FRA", "US": "IAD", "JP": "NRT"
+      }
+      const mapped = countryToDc[incomingCountry.toUpperCase()]
+      if (mapped) datacenter = mapped
+    }
+  }
+
+  if (!datacenter) {
+    try {
+      const tz = Intl.DateTimeFormat().resolvedOptions().timeZone || ""
+      const tzToDc = {
+        "Asia/Kolkata": "HYD", "Asia/Calcutta": "HYD", "Europe/Bucharest": "OTP",
+        "Europe/Paris": "CDG", "Europe/Amsterdam": "AMS", "Europe/London": "LHR",
+        "Europe/Berlin": "FRA", "Europe/Frankfurt": "FRA", "America/New_York": "IAD",
+        "America/Detroit": "IAD", "America/Los_Angeles": "SJC", "America/Denver": "DEN",
+        "America/Chicago": "ORD", "Asia/Tokyo": "NRT"
+      }
+      const mapped = tzToDc[tz]
+      if (mapped) datacenter = mapped
+    } catch (e) { /* ignore */ }
+  }
+
+  if (!datacenter || !datacenters.includes(datacenter)) datacenter = "AMS"
+
+  const datacenterToCluster = {
+    "AMS": "mainnet-ams", "CDG": "mainnet-cdg",
+    "OTP": "mainnet-ovh", "HYD": "mainnet-hyd"
+  }
+  const dynamicCluster = process.env.CDN_CLUSTER || datacenterToCluster[datacenter] || "mainnet-ovh"
+  res.setHeader("cluster", dynamicCluster)
+  res.setHeader("cf-ray", `${Math.random().toString(16).substring(2, 18)}-${datacenter}`)
+
+  if (!res.getHeader("cf-cache-status")) {
+    res.setHeader("cf-cache-status", process.env.CDN_CF_CACHE_STATUS || "DYNAMIC")
+  }
+
+  const originalWriteHead = res.writeHead
+  res.writeHead = function () {
+    Object.keys(res.getHeaders ? res.getHeaders() : {}).forEach(name => {
+      if (!ALLOWED_CDN_HEADERS.includes(name.toLowerCase())) {
+        res.removeHeader(name)
+      }
+    })
+
+    for (let i = 0; i < arguments.length; i++) {
+      const arg = arguments[i]
+      if (arg && typeof arg === "object" && !Array.isArray(arg)) {
+        Object.keys(arg).forEach(key => {
+          if (!ALLOWED_CDN_HEADERS.includes(key.toLowerCase())) {
+            delete arg[key]
+          }
+        })
+      }
+    }
+    return originalWriteHead.apply(this, arguments)
+  }
+
+  next()
+})
 
 // Helper to get GitHub path
 function getGithubPath(network, type, id = "") {
@@ -174,6 +277,13 @@ const SYNC_INTERVAL = 10 * 60 * 1000 // 10 minutes
 /**
  * Helper to fetch from GitHub with optional token
  */
+class HttpError extends Error {
+  constructor(status, message) {
+    super(message)
+    this.status = status
+  }
+}
+
 async function githubFetch(url) {
   const headers = {
     "Accept": "application/vnd.github.v3+json"
@@ -184,7 +294,7 @@ async function githubFetch(url) {
   
   const response = await fetch(url, { headers })
   if (!response.ok) {
-     throw new Error(`GitHub API error (${response.status}): ${response.statusText}`)
+     throw new HttpError(response.status, `GitHub API error: ${response.statusText}`)
   }
   return response
 }
@@ -362,8 +472,7 @@ app.get("/assets-cdn/:p1/:p2/:p3?/:p4?", async (req, res) => {
       res.setHeader("Content-Type", ext === "svg" ? "image/svg+xml" : "image/png")
       res.send(Buffer.from(buffer))
     } catch (error) {
-      const errorMsg = process.env.NODE_ENV === "production" ? error.message : error.stack
-      console.error(`[Error] ${req.path}:`, errorMsg)
+      console.error(`[Error] ${req.path}:`, error.stack)
       res.status(500).send("Internal Server Error")
     }
   } else {
@@ -395,12 +504,10 @@ app.get("/assets-cdn/:p1/:p2/:p3?/:p4?", async (req, res) => {
       }
       res.json(formatAbsoluteUrls(result, req))
     } catch (error) {
-      // Check if it's a 404 from GitHub - return 404 instead of 500
-      if (error.message && error.message.includes("404")) {
+      if (error instanceof HttpError && error.status === 404) {
         return res.status(404).send("Not found")
       }
-      const errorMsg = process.env.NODE_ENV === "production" ? error.message : error.stack
-      console.error(`[Error] ${req.path}:`, errorMsg)
+      console.error(`[Error] ${req.path}:`, error.stack)
       res.status(500).send("Internal Server Error")
     }
   }

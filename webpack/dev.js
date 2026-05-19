@@ -91,37 +91,7 @@ const devConfig = configBuilder(
           devServer.app.disable("x-powered-by")
         }
 
-        // Security Header Helper: Ensures headers are set even on errors/blocks
-        const applySecurityHeaders = (req, res) => {
-          if (res.headersSent) return
-          const allowed = (process.env.ALLOWED_ORIGIN || "").split(",")
-          const origin = req.headers.origin
-          const allowAll = process.env.ALLOWED_ORIGIN === "*"
-          const allowOrigin = allowAll
-            ? "*"
-            : (allowed.includes(origin) ? origin : allowed[0] || "http://localhost:3200")
-
-          res.setHeader("Access-Control-Allow-Origin", allowOrigin)
-          res.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
-          res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization")
-          if (!allowAll) {
-            // When echoing Origin (or choosing from an allowlist), ensure caches do not mix responses across origins.
-            res.setHeader("Vary", "Origin")
-          }
-          res.setHeader("X-Content-Type-Options", "nosniff")
-          res.setHeader("X-Frame-Options", "DENY")
-          res.setHeader("Strict-Transport-Security", "max-age=31536000; includeSubDomains")
-          res.setHeader("Referrer-Policy", "no-referrer-when-downgrade")
-          res.setHeader("Permissions-Policy", "camera=(), microphone=(), geolocation=(), interest-cohort=()")
-          res.setHeader("Cross-Origin-Embedder-Policy", "unsafe-none")
-          res.setHeader("Cross-Origin-Opener-Policy", "same-origin")
-          res.setHeader("Cross-Origin-Resource-Policy", "cross-origin")
-          res.setHeader("X-Permitted-Cross-Domain-Policies", "none")
-          res.setHeader(
-            "Content-Security-Policy",
-            "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https://raw.githubusercontent.com; connect-src 'self' https://*.trycloudflare.com;"
-          )
-        }
+        const { ALLOWED_CDN_HEADERS, applySecurityHeaders } = require("../dev-helpers/security-headers").default
 
         // 2. Simple In-Memory Rate Limiter
         const rateLimit = new Map()
@@ -146,7 +116,16 @@ const devConfig = configBuilder(
               },
               (proxyRes) => {
                 if (!res.headersSent) {
-                  res.writeHead(proxyRes.statusCode, proxyRes.headers)
+                  const existingHeaderNames = res.getHeaderNames ? res.getHeaderNames() : []
+                  existingHeaderNames.forEach(name => res.removeHeader(name))
+
+                  const cleanHeaders = { ...proxyRes.headers }
+                  Object.keys(cleanHeaders).forEach(name => {
+                    if (!ALLOWED_CDN_HEADERS.includes(name.toLowerCase())) {
+                      delete cleanHeaders[name]
+                    }
+                  })
+                  res.writeHead(proxyRes.statusCode, cleanHeaders)
                 }
                 proxyRes.pipe(res)
               }
@@ -212,7 +191,7 @@ const devConfig = configBuilder(
         return middlewares
       },
       port: 3200,
-      host: "0.0.0.0",
+      host: "127.0.0.1",
       hot: true,
       static: {
         directory: path.resolve(projectBasePath, "dev-helpers"),

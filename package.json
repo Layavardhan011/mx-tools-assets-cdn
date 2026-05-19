@@ -50,7 +50,7 @@
     "proxy": "cross-env NODE_ENV=development node dev-helpers/assets-proxy.js",
     "proxy:prod": "cross-env NODE_ENV=production node dev-helpers/assets-proxy.js",
     "start-api": "run-p dev proxy",
-    "start-api:prod": "run-p build proxy:prod",
+    "start-api:prod": "run-p dev proxy:prod",
     "deps-license": "license-checker --production --csv --out $npm_package_deps_check_dir/licenses.csv && license-checker --development --csv --out $npm_package_deps_check_dir/licenses-dev.csv",
     "deps-size": "cross-env NODE_ENV=development webpack -p --config webpack/bundle.js --json | webpack-bundle-size-analyzer >| $npm_package_deps_check_dir/sizes.txt",
     "deps-check": "run-s deps-license deps-size",

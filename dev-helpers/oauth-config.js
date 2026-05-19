@@ -1,8 +1,7 @@
 /**
  * OAuth Configuration for Dev Server
- * This file is tracked in version control (Risk Accepted for Private Repo)
+ * Only non-sensitive fields — client secret must be provided at runtime, never committed.
  */
 window.OAUTH_CLIENT_ID = ""
-window.OAUTH_CLIENT_SECRET = ""
 window.OAUTH_REALM = ""
 window.OAUTH_APP_NAME = ""
