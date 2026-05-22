@@ -2,7 +2,7 @@ const path = require('path');
 
 module.exports = {
   rootDir: path.join(__dirname, '..', '..'),
-  testEnvironment: 'jest-environment-jsdom',
+  testEnvironment: 'node',
   testMatch: [
     '**/test/unit/*.js?(x)',
     '**/test/unit/**/*.js?(x)',
