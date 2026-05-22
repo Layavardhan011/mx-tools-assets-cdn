@@ -1,4 +1,4 @@
-import { MiddlewareConsumer, Module, NestModule } from "@nestjs/common";
+import { Module } from "@nestjs/common";
 import {
   EnvironmentConfigModule,
   DistributedCacheModule,
@@ -6,7 +6,6 @@ import {
 } from "@mx-tools/common";
 import { AssetsCdnProxyController } from "./controllers/assets-cdn-proxy.controller";
 import { AssetsCdnProxyService } from "./services/assets-cdn-proxy.service";
-import { CdnHeaderInjectionMiddleware } from "./middlewares/cdn-header-injection.middleware";
 
 @Module({
   imports: [
@@ -15,12 +14,6 @@ import { CdnHeaderInjectionMiddleware } from "./middlewares/cdn-header-injection
     GithubRepositoryModule
   ],
   controllers: [AssetsCdnProxyController],
-  providers: [AssetsCdnProxyService, CdnHeaderInjectionMiddleware]
+  providers: [AssetsCdnProxyService]
 })
-export class AssetsCdnApiModule implements NestModule {
-  configure(consumer: MiddlewareConsumer) {
-    consumer
-      .apply(CdnHeaderInjectionMiddleware)
-      .forRoutes("assets-cdn");
-  }
-}
+export class AssetsCdnApiModule {}

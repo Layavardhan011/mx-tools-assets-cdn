@@ -1,41 +1,41 @@
-import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { ApiProperty } from '@nestjs/swagger';
 
 export class AccountAssetsSocial {
-  @ApiPropertyOptional() website?: string;
-  @ApiPropertyOptional() email?: string;
-  @ApiPropertyOptional() blog?: string;
-  @ApiPropertyOptional() twitter?: string;
-  @ApiPropertyOptional() discord?: string;
-  @ApiPropertyOptional() telegram?: string;
-  @ApiPropertyOptional() facebook?: string;
-  @ApiPropertyOptional() instagram?: string;
-  @ApiPropertyOptional() youtube?: string;
-  @ApiPropertyOptional() whitepaper?: string;
-  @ApiPropertyOptional() coinmarketcap?: string;
-  @ApiPropertyOptional() coingecko?: string;
-  @ApiPropertyOptional() linkedin?: string;
+  @ApiProperty({ type: String, nullable: true }) website!: string | null;
+  @ApiProperty({ type: String, nullable: true }) email!: string | null;
+  @ApiProperty({ type: String, nullable: true }) blog!: string | null;
+  @ApiProperty({ type: String, nullable: true }) twitter!: string | null;
+  @ApiProperty({ type: String, nullable: true }) discord!: string | null;
+  @ApiProperty({ type: String, nullable: true }) telegram!: string | null;
+  @ApiProperty({ type: String, nullable: true }) facebook!: string | null;
+  @ApiProperty({ type: String, nullable: true }) instagram!: string | null;
+  @ApiProperty({ type: String, nullable: true }) youtube!: string | null;
+  @ApiProperty({ type: String, nullable: true }) whitepaper!: string | null;
+  @ApiProperty({ type: String, nullable: true }) coinmarketcap!: string | null;
+  @ApiProperty({ type: String, nullable: true }) coingecko!: string | null;
+  @ApiProperty({ type: String, nullable: true }) linkedin!: string | null;
 }
 
 export class AccountAssets {
   @ApiProperty() address!: string;
   @ApiProperty() name!: string;
   @ApiProperty() description!: string;
-  @ApiPropertyOptional({ type: AccountAssetsSocial }) social?: AccountAssetsSocial;
+  @ApiProperty({ type: AccountAssetsSocial, nullable: true }) social!: AccountAssetsSocial | null;
   @ApiProperty({ type: [String] }) tags!: string[];
-  @ApiPropertyOptional() proof?: string;
-  @ApiPropertyOptional() iconPng?: string;
-  @ApiPropertyOptional() iconSvg?: string;
+  @ApiProperty({ type: String, nullable: true }) proof!: string | null;
+  @ApiProperty({ type: String, nullable: true }) iconPng!: string | null;
+  @ApiProperty({ type: String, nullable: true }) iconSvg!: string | null;
 }
 
 export class IdentityAssets {
   @ApiProperty() identity!: string;
   @ApiProperty() name!: string;
   @ApiProperty({ type: [String] }) owners!: string[];
-  @ApiPropertyOptional() description?: string;
-  @ApiPropertyOptional() avatar?: string;
-  @ApiPropertyOptional() twitter?: string;
-  @ApiPropertyOptional() website?: string;
-  @ApiPropertyOptional() location?: string;
+  @ApiProperty({ type: String, nullable: true }) description!: string | null;
+  @ApiProperty({ type: String, nullable: true }) avatar!: string | null;
+  @ApiProperty({ type: String, nullable: true }) twitter!: string | null;
+  @ApiProperty({ type: String, nullable: true }) website!: string | null;
+  @ApiProperty({ type: String, nullable: true }) location!: string | null;
 }
 
 export class NftRank {
@@ -51,12 +51,11 @@ export class TokenAssets {
   @ApiProperty() name!: string;
   @ApiProperty() pngUrl!: string;
   @ApiProperty() svgUrl!: string;
-  @ApiPropertyOptional() ledgerSignature?: string;
-  @ApiPropertyOptional() lockedAccounts?: string;
-  @ApiPropertyOptional({ type: [String] }) extraTokens?: string[];
-  @ApiPropertyOptional({ enum: ['trait', 'statistical', 'openRarity', 'jaccardDistances', 'custom'] }) preferredRankAlgorithm?: string;
-  @ApiPropertyOptional({ type: Number }) priceSource?: number;
-  @ApiPropertyOptional({ type: [NftRank] }) ranks?: NftRank[];
-  @ApiPropertyOptional({ type: Object }) social?: Record<string, unknown>;
+  @ApiProperty({ type: String, nullable: true }) ledgerSignature!: string | null;
+  @ApiProperty({ type: String, nullable: true }) lockedAccounts!: string | null;
+  @ApiProperty({ type: [String], nullable: true }) extraTokens!: string[] | null;
+  @ApiProperty({ enum: ['trait', 'statistical', 'openRarity', 'jaccardDistances', 'custom'], nullable: true }) preferredRankAlgorithm!: string | null;
+  @ApiProperty({ type: Number, nullable: true }) priceSource!: number | null;
+  @ApiProperty({ type: [NftRank], nullable: true }) ranks!: NftRank[] | null;
+  @ApiProperty({ type: Object, nullable: true }) social!: Record<string, unknown> | null;
 }
-

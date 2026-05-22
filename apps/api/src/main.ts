@@ -36,20 +36,27 @@ async function bootstrap() {
     next();
   });
 
-  // 3. Compression
-  app.use(compression());
+  // 3. Compression — P8: Skip PNG (already compressed); compress JSON, SVG, etc.
+  app.use(compression({
+    filter: (req: Request, res: Response) => {
+      if (req.path.endsWith('.png')) return false;
+      return compression.filter(req, res);
+    }
+  }));
 
-  // 4. Response Size Limit (10MB)
+  // 4. Response Size Limit (10MB) — P4: Stringify once to avoid double serialization
   app.use((req: Request, res: Response, next: NextFunction) => {
     if (req.method === "OPTIONS") return next();
-    const originalJson = res.json.bind(res);
+    const _originalJson = res.json.bind(res);
     res.json = function (body: unknown) {
-      const size = Buffer.byteLength(JSON.stringify(body), "utf8");
+      const serialized = JSON.stringify(body);
+      const size = Buffer.byteLength(serialized, "utf8");
       if (size > 10 * 1024 * 1024) {
         return res.status(413).send("Response too large");
       }
-      return originalJson(body);
-    } as typeof originalJson;
+      res.setHeader("Content-Type", "application/json; charset=utf-8");
+      return res.send(serialized);
+    } as typeof _originalJson;
     next();
   });
 
@@ -117,14 +124,16 @@ async function bootstrap() {
   const allowedOrigin = configService.allowedOrigin;
   app.enableCors({
     origin: (origin: string, callback: (err: Error | null, allow: boolean) => void) => {
-      if (!origin) return callback(null, true);
       if (allowedOrigin.includes("*")) {
         return callback(null, true);
       }
-      if (allowedOrigin.length === 0) {
-        if (process.env.NODE_ENV !== "production") {
-          return callback(null, true);
+      if (!origin) {
+        if (process.env.NODE_ENV === "production") {
+          return callback(null, false);
         }
+        return callback(null, true);
+      }
+      if (allowedOrigin.length === 0) {
         return callback(null, false);
       }
       if (allowedOrigin.includes(origin)) {

@@ -57,35 +57,4 @@ export class EnvironmentConfigService {
     return `https://raw.githubusercontent.com/${this.sanitizeRepoComponent(this.repoOwner)}/${this.sanitizeRepoComponent(this.repoName)}/${this.sanitizeRepoComponent(this.branch)}`;
   }
 
-  get cdnCorsOrigin(): string {
-    return this.configService.get<string>("CDN_CORS_ORIGIN", "*");
-  }
-
-  get cdnXPoweredBy(): string {
-    return this.configService.get<string>("CDN_X_POWERED_BY", "Express");
-  }
-
-  get cdnSts(): string {
-    return this.configService.get<string>("CDN_STS", "max-age=31536000; includeSubDomains");
-  }
-
-  get cdnServer(): string {
-    return this.configService.get<string>("CDN_SERVER", "cloudflare");
-  }
-
-  get cdnCfRaySuffix(): string | undefined {
-    return this.configService.get<string>("CDN_CF_RAY_SUFFIX");
-  }
-
-  get cdnCluster(): string | undefined {
-    return this.configService.get<string>("CDN_CLUSTER");
-  }
-
-  get cdnCacheControl(): string {
-    return this.configService.get<string>("CDN_CACHE_CONTROL", "public, max-age=3600");
-  }
-
-  get cdnCfCacheStatus(): string {
-    return this.configService.get<string>("CDN_CF_CACHE_STATUS", "DYNAMIC");
-  }
 }

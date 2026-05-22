@@ -38,14 +38,15 @@
   "scripts": {
     "automated-release": "release-it -VV --config ./release/.release-it.json",
     "clean": "rimraf ./dist",
-    "proxy": "ts-node -r tsconfig-paths/register apps/api/src/main.ts",
-    "proxy:prod": "node dist/apps/api/src/main.js",
-    "proxy:cron": "ts-node -r tsconfig-paths/register apps/jobs-service/src/main.ts",
-    "proxy:cron:prod": "node dist/apps/jobs-service/src/main.js",
-    "build:api": "nest build api && nest build jobs-service && nest build common",
+    "start-api": "cross-env NODE_ENV=development ts-node -r tsconfig-paths/register apps/api/src/main.ts",
+    "start-api:prod": "cross-env NODE_ENV=production node dist/apps/api/src/main.js",
+    "start-api:cron": "cross-env NODE_ENV=development ts-node -r tsconfig-paths/register apps/jobs-service/src/main.ts",
+    "start-api:cron:prod": "cross-env NODE_ENV=production node dist/apps/jobs-service/src/main.js",
+    "build:api": "cross-env NODE_ENV=production nest build api && nest build jobs-service && nest build common",
     "lint": "eslint \"{apps,libs}/**/*.ts\" --max-warnings 0",
-    "certs:gen": "node scripts/generate-certs.js",
-    "test:unit": "cross-env NODE_ENV=test BABEL_ENV=commonjs BROWSERSLIST_ENV=node-development jest --config ./config/jest/jest.unit.config.js"
+    "test:unit": "cross-env NODE_ENV=test BABEL_ENV=commonjs BROWSERSLIST_ENV=node-development jest --config ./config/jest/jest.unit.config.js",
+    "test:load": "k6 run test/performance/load-test.js",
+    "test:load:staged": "k6 run --vus 10 --duration 30s test/performance/load-test.js"
   },
   "dependencies": {
     "@nestjs/common": "^11.1.22",

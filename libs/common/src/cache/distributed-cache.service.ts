@@ -7,6 +7,7 @@ export class DistributedCacheService implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(DistributedCacheService.name);
   private redisClient: RedisClientType | null = null;
   private readonly inMemoryStore: Map<string, unknown> = new Map();
+  private readonly MAX_MEMORY_ENTRIES = 1000; // S6: Prevent unbounded memory growth
   private redisConnected = false;
 
   constructor(private readonly configService: EnvironmentConfigService) {}
@@ -91,6 +92,11 @@ export class DistributedCacheService implements OnModuleInit, OnModuleDestroy {
       } catch (err: unknown) {
         this.logger.error(`Error writing key ${key} to Redis: ${err instanceof Error ? err.message : err}`);
       }
+    }
+    // S6: Evict oldest entry if in-memory store exceeds max size
+    if (this.inMemoryStore.size >= this.MAX_MEMORY_ENTRIES) {
+      const oldest = this.inMemoryStore.keys().next().value;
+      if (oldest !== undefined) this.inMemoryStore.delete(oldest);
     }
     this.inMemoryStore.set(key, value);
   }

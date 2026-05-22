@@ -1,9 +1,9 @@
-import { Controller, Get, Param, Res, Req, HttpStatus, HttpException, Logger } from "@nestjs/common";
+import { Controller, Get, Param, Res, Req, HttpStatus, HttpException, Logger, Query } from "@nestjs/common";
 import { Request, Response } from "express";
 import { NetworkPipe } from "../pipes";
 import { AssetsCdnProxyService } from '../services/assets-cdn-proxy.service';
 import { resolveParams, HttpError } from "@mx-tools/common";
-import { ApiTags, ApiParam, ApiExcludeEndpoint, ApiOkResponse, ApiNotFoundResponse, ApiProduces } from "@nestjs/swagger";
+import { ApiTags, ApiParam, ApiExcludeEndpoint, ApiOkResponse, ApiNotFoundResponse, ApiProduces, ApiQuery } from "@nestjs/swagger";
 import { AccountAssets, IdentityAssets, TokenAssets } from "../dto/schemas.dto";
 import { AddressParam, IdentifierParam, IdentityParam, WildcardParams, WildcardItemParams } from "../dto/param-validators.dto";
 
@@ -32,7 +32,8 @@ export class AssetsCdnProxyController {
     p3: string | undefined,
     p4: string | undefined,
     baseUrl: string,
-    res: Response
+    res: Response,
+    defaultIcon?: string
   ): Promise<unknown> {
     const isReady = await this.proxyService.isReady();
     if (!isReady) {
@@ -45,8 +46,9 @@ export class AssetsCdnProxyController {
 
     if (isIconRequest) {
       try {
-        const { buffer, mimeType } = await this.proxyService.getIcon(p1, p2, p3, p4);
+        const { buffer, mimeType } = await this.proxyService.getIcon(p1, p2, p3, p4, defaultIcon);
         res.setHeader("Content-Type", mimeType);
+        res.setHeader("Cache-Control", "public, max-age=3600");
         return res.send(buffer);
       } catch (err: unknown) {
         if (err instanceof HttpError) {
@@ -58,6 +60,7 @@ export class AssetsCdnProxyController {
 
     try {
       const item = await this.proxyService.getItem(p1, p2, p3, p4, baseUrl);
+      res.setHeader("Cache-Control", "public, max-age=300");
       return res.json(item);
     } catch (err: unknown) {
       if (err instanceof HttpError) {
@@ -68,14 +71,19 @@ export class AssetsCdnProxyController {
   }
 
   @ApiExcludeEndpoint()
+  @Get()
+  getRoot(@Res() res: Response) {
+    return res.status(HttpStatus.NOT_FOUND).send("default backend - 404");
+  }
+
+  @ApiExcludeEndpoint()
   @Get("health")
   getHealth() {
     return { status: "ok" };
   }
 
-  // ==========================================
   // ACCOUNTS GROUP (Swagger Tags)
-  // ==========================================
+
   @ApiTags("accounts")
   @ApiParam(NETWORK_PARAM)
   @ApiOkResponse({ type: [AccountAssets] })
@@ -88,7 +96,10 @@ export class AssetsCdnProxyController {
     }
     try {
       const data = await this.proxyService.getCollection(network, "accounts", this.getBaseUrl(req));
-      if (data) return res.json(data);
+      if (data) {
+        res.setHeader("Cache-Control", "public, max-age=300");
+        return res.json(data);
+      }
       return res.status(HttpStatus.NOT_FOUND).send("Not found or synchronization in progress");
     } catch (err: unknown) {
       this.logger.error(`Error loading accounts collection for ${network}: ${err instanceof Error ? err.message : err}`);
@@ -99,7 +110,7 @@ export class AssetsCdnProxyController {
   @ApiTags("accounts")
 
   @ApiParam(NETWORK_PARAM)
-  @ApiParam({ name: "address" })
+  @ApiParam({ name: "address", type: String })
   @ApiOkResponse({ type: AccountAssets })
   @ApiNotFoundResponse()
   @Get("assets-cdn/:network/accounts/:address")
@@ -110,7 +121,8 @@ export class AssetsCdnProxyController {
   @ApiTags("accounts")
   @ApiProduces("image/png")
   @ApiParam(NETWORK_PARAM)
-  @ApiParam({ name: "address" })
+  @ApiParam({ name: "address", type: String })
+  @ApiQuery({ name: "default", required: false, type: Boolean, description: "Whether to return the default icon if the identity does not have a custom icon. Default is true" })
   @ApiOkResponse()
   @ApiNotFoundResponse()
   @Get("assets-cdn/:network/accounts/:address/icon.png")
@@ -118,15 +130,17 @@ export class AssetsCdnProxyController {
     @Param("network", NetworkPipe) network: string,
     @Param() params: AddressParam,
     @Req() req: Request,
-    @Res() res: Response
+    @Res() res: Response,
+    @Query("default") defaultIcon?: string
   ) {
-    return this.respondItemOrIcon(network, "accounts", params.address, "icon.png", this.getBaseUrl(req), res);
+    return this.respondItemOrIcon(network, "accounts", params.address, "icon.png", this.getBaseUrl(req), res, defaultIcon);
   }
 
   @ApiTags("accounts")
   @ApiProduces("image/svg+xml")
   @ApiParam(NETWORK_PARAM)
-  @ApiParam({ name: "address" })
+  @ApiParam({ name: "address", type: String })
+  @ApiQuery({ name: "default", required: false, type: Boolean, description: "Whether to return the default icon if the identity does not have a custom icon. Default is true" })
   @ApiOkResponse()
   @ApiNotFoundResponse()
   @Get("assets-cdn/:network/accounts/:address/icon.svg")
@@ -134,9 +148,10 @@ export class AssetsCdnProxyController {
     @Param("network", NetworkPipe) network: string,
     @Param() params: AddressParam,
     @Req() req: Request,
-    @Res() res: Response
+    @Res() res: Response,
+    @Query("default") defaultIcon?: string
   ) {
-    return this.respondItemOrIcon(network, "accounts", params.address, "icon.svg", this.getBaseUrl(req), res);
+    return this.respondItemOrIcon(network, "accounts", params.address, "icon.svg", this.getBaseUrl(req), res, defaultIcon);
   }
 
   // ==========================================
@@ -154,7 +169,10 @@ export class AssetsCdnProxyController {
     }
     try {
       const data = await this.proxyService.getCollection(network, "identities", this.getBaseUrl(req));
-      if (data) return res.json(data);
+      if (data) {
+        res.setHeader("Cache-Control", "public, max-age=300");
+        return res.json(data);
+      }
       return res.status(HttpStatus.NOT_FOUND).send("Not found or synchronization in progress");
     } catch (err: unknown) {
       this.logger.error(`Error loading identities collection for ${network}: ${err instanceof Error ? err.message : err}`);
@@ -164,7 +182,7 @@ export class AssetsCdnProxyController {
 
   @ApiTags("identities")
   @ApiParam(NETWORK_PARAM)
-  @ApiParam({ name: "identity" })
+  @ApiParam({ name: "identity", type: String })
   @ApiOkResponse({ type: IdentityAssets })
   @ApiNotFoundResponse()
   @Get("assets-cdn/:network/identities/:identity")
@@ -175,7 +193,8 @@ export class AssetsCdnProxyController {
   @ApiTags("identities")
   @ApiProduces("image/png")
   @ApiParam(NETWORK_PARAM)
-  @ApiParam({ name: "identity" })
+  @ApiParam({ name: "identity", type: String })
+  @ApiQuery({ name: "default", required: false, type: Boolean, description: "Whether to return the default icon if the identity does not have a custom icon. Default is true" })
   @ApiOkResponse()
   @ApiNotFoundResponse()
   @Get("assets-cdn/:network/identities/:identity/icon.png")
@@ -183,9 +202,10 @@ export class AssetsCdnProxyController {
     @Param("network", NetworkPipe) network: string,
     @Param() params: IdentityParam,
     @Req() req: Request,
-    @Res() res: Response
+    @Res() res: Response,
+    @Query("default") defaultIcon?: string
   ) {
-    return this.respondItemOrIcon(network, "identities", params.identity, "icon.png", this.getBaseUrl(req), res);
+    return this.respondItemOrIcon(network, "identities", params.identity, "icon.png", this.getBaseUrl(req), res, defaultIcon);
   }
 
   // ==========================================
@@ -203,7 +223,10 @@ export class AssetsCdnProxyController {
     }
     try {
       const data = await this.proxyService.getCollection(network, "tokens", this.getBaseUrl(req));
-      if (data) return res.json(data);
+      if (data) {
+        res.setHeader("Cache-Control", "public, max-age=300");
+        return res.json(data);
+      }
       return res.status(HttpStatus.NOT_FOUND).send("Not found or synchronization in progress");
     } catch (err: unknown) {
       this.logger.error(`Error loading tokens collection for ${network}: ${err instanceof Error ? err.message : err}`);
@@ -213,7 +236,7 @@ export class AssetsCdnProxyController {
 
   @ApiTags("tokens")
   @ApiParam(NETWORK_PARAM)
-  @ApiParam({ name: "identifier" })
+  @ApiParam({ name: "identifier", type: String })
   @ApiOkResponse({ type: TokenAssets })
   @ApiNotFoundResponse()
   @Get("assets-cdn/:network/tokens/:identifier")
@@ -224,7 +247,8 @@ export class AssetsCdnProxyController {
   @ApiTags("tokens")
   @ApiProduces("image/png")
   @ApiParam(NETWORK_PARAM)
-  @ApiParam({ name: "identifier" })
+  @ApiParam({ name: "identifier", type: String })
+  @ApiQuery({ name: "default", required: false, type: Boolean, description: "Whether to return the default icon if the identity does not have a custom icon. Default is true" })
   @ApiOkResponse()
   @ApiNotFoundResponse()
   @Get("assets-cdn/:network/tokens/:identifier/icon.png")
@@ -232,15 +256,17 @@ export class AssetsCdnProxyController {
     @Param("network", NetworkPipe) network: string,
     @Param() params: IdentifierParam,
     @Req() req: Request,
-    @Res() res: Response
+    @Res() res: Response,
+    @Query("default") defaultIcon?: string
   ) {
-    return this.respondItemOrIcon(network, "tokens", params.identifier, "icon.png", this.getBaseUrl(req), res);
+    return this.respondItemOrIcon(network, "tokens", params.identifier, "icon.png", this.getBaseUrl(req), res, defaultIcon);
   }
 
   @ApiTags("tokens")
   @ApiProduces("image/svg+xml")
   @ApiParam(NETWORK_PARAM)
-  @ApiParam({ name: "identifier" })
+  @ApiParam({ name: "identifier", type: String })
+  @ApiQuery({ name: "default", required: false, type: Boolean, description: "Whether to return the default icon if the identity does not have a custom icon. Default is true" })
   @ApiOkResponse()
   @ApiNotFoundResponse()
   @Get("assets-cdn/:network/tokens/:identifier/icon.svg")
@@ -248,9 +274,10 @@ export class AssetsCdnProxyController {
     @Param("network", NetworkPipe) network: string,
     @Param() params: IdentifierParam,
     @Req() req: Request,
-    @Res() res: Response
+    @Res() res: Response,
+    @Query("default") defaultIcon?: string
   ) {
-    return this.respondItemOrIcon(network, "tokens", params.identifier, "icon.svg", this.getBaseUrl(req), res);
+    return this.respondItemOrIcon(network, "tokens", params.identifier, "icon.svg", this.getBaseUrl(req), res, defaultIcon);
   }
 
   // ==========================================
@@ -273,6 +300,7 @@ export class AssetsCdnProxyController {
     try {
       const data = await this.proxyService.getCollection(p1, p2, this.getBaseUrl(req));
       if (data) {
+        res.setHeader("Cache-Control", "public, max-age=300");
         return res.json(data);
       }
       return res.status(HttpStatus.NOT_FOUND).send("Not found or synchronization in progress");

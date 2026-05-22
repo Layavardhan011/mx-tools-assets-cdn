@@ -20,12 +20,14 @@ interface GithubRepoItem {
   path: string;
 }
 
-const SYNC_INTERVAL = 10 * 60 * 1000; // 10 minutes
+const MAX_ICON_SIZE = 2 * 1024 * 1024; // S5: 2MB max icon size
 
 @Injectable()
 export class AssetsCdnProxyService implements OnModuleInit {
   private readonly logger = new Logger(AssetsCdnProxyService.name);
   private isSyncing = false;
+  private defaultPng: Buffer | null = null;
+  private defaultSvg: Buffer | null = null;
 
   constructor(
     private readonly cacheService: DistributedCacheService,
@@ -34,16 +36,19 @@ export class AssetsCdnProxyService implements OnModuleInit {
   ) {}
 
   async onModuleInit() {
+    // P3: Preload default fallback icons into memory once (avoid sync fs on every request)
+    const basePath = path.join(process.cwd(), "apps", "api", "src", "assets", "default-images");
+    try { this.defaultPng = await fs.promises.readFile(path.join(basePath, "default.png")); } catch { /* no default PNG available */ }
+    try { this.defaultSvg = await fs.promises.readFile(path.join(basePath, "default.svg")); } catch { /* no default SVG available */ }
+    if (this.defaultPng || this.defaultSvg) {
+      this.logger.log(`Preloaded default fallback icons (PNG: ${!!this.defaultPng}, SVG: ${!!this.defaultSvg})`);
+    }
+
+    // P5: Only run initial cache warm-up here; periodic sync is handled by the jobs-service cron
     this.logger.log("Starting initial cache warm-up...");
     this.syncAll().catch((err) => {
       this.logger.error(`Initial sync failed: ${err.message}`);
     });
-    setInterval(() => {
-      this.logger.log("Triggering periodic cache synchronization...");
-      this.syncAll().catch((err) => {
-        this.logger.error(`Periodic sync failed: ${err.message}`);
-      });
-    }, SYNC_INTERVAL);
   }
 
   async syncCollection(network: string, type: string): Promise<void> {
@@ -100,7 +105,9 @@ export class AssetsCdnProxyService implements OnModuleInit {
         return null;
       });
 
-      const results = await this.githubConnector.limitConcurrency(tasks, 5);
+      // P7: Use higher concurrency for authenticated GitHub requests (5000 req/hour limit)
+      const concurrency = this.configService.githubToken ? 15 : 5;
+      const results = await this.githubConnector.limitConcurrency(tasks, concurrency);
       const filtered = results.filter(Boolean);
       const cacheKey = `assets-cdn:${network}:${type}`;
       await this.cacheService.set(cacheKey, filtered, 900); // 15 min TTL
@@ -246,7 +253,7 @@ export class AssetsCdnProxyService implements OnModuleInit {
   /**
    * Fetch asset icon/logo binary
    */
-  async getIcon(p1: string, p2: string, p3?: string, p4?: string): Promise<{ buffer: Buffer; mimeType: string }> {
+  async getIcon(p1: string, p2: string, p3?: string, p4?: string, defaultIcon?: string): Promise<{ buffer: Buffer; mimeType: string }> {
     const { p1: cleanP1, p2: cleanP2, p3: cleanP3, p4: cleanP4 } = {
       p1: sanitize(p1),
       p2: sanitize(p2),
@@ -270,6 +277,17 @@ export class AssetsCdnProxyService implements OnModuleInit {
 
     this.logger.log(`Fetching icon binary: ${network}/${type}/${id} (${ext})`);
 
+    // P1: Check icon cache first (avoid hitting GitHub on every request)
+    const iconCacheKey = `assets-cdn:icon:${network}:${type}:${id}:${ext}`;
+    const cachedIcon = await this.cacheService.get<string>(iconCacheKey);
+    if (cachedIcon) {
+      this.logger.log(`Icon cache HIT: ${iconCacheKey}`);
+      return {
+        buffer: Buffer.from(cachedIcon, "base64"),
+        mimeType: ext === "svg" ? "image/svg+xml" : "image/png"
+      };
+    }
+
     try {
       let rawUrl = "";
       if (type === "accounts") {
@@ -292,31 +310,52 @@ export class AssetsCdnProxyService implements OnModuleInit {
       }
 
       const arrayBuffer = await response.arrayBuffer();
+
+      // S5: Validate icon size (max 2MB)
+      if (arrayBuffer.byteLength > MAX_ICON_SIZE) {
+        throw new HttpError(HttpStatus.BAD_REQUEST, "Icon file exceeds maximum allowed size");
+      }
+
+      const iconBuffer = Buffer.from(arrayBuffer);
+
+      // S5: Validate PNG magic bytes (89 50 4E 47)
+      if (ext === "png" && iconBuffer.length >= 4 &&
+          (iconBuffer[0] !== 0x89 || iconBuffer[1] !== 0x50 || iconBuffer[2] !== 0x4E || iconBuffer[3] !== 0x47)) {
+        throw new HttpError(HttpStatus.BAD_REQUEST, "Invalid PNG file");
+      }
+
+      // P1: Cache the icon binary (base64) for 15 minutes
+      await this.cacheService.set(iconCacheKey, iconBuffer.toString("base64"), 900);
+
       return {
-        buffer: Buffer.from(arrayBuffer),
+        buffer: iconBuffer,
         mimeType: ext === "svg" ? "image/svg+xml" : "image/png"
       };
     } catch (error: unknown) {
       if (error instanceof HttpError && error.status === HttpStatus.NOT_FOUND) {
-        try {
-          const localPath = path.join(process.cwd(), "apps", "api", "src", "assets", "default-images", `default.${ext}`);
-          if (fs.existsSync(localPath)) {
-            this.logger.log(`Serving local universal fallback: default.${ext}`);
-            const buffer = fs.readFileSync(localPath);
-            return {
-              buffer,
-              mimeType: ext === "svg" ? "image/svg+xml" : "image/png"
-            };
-          } else if (ext === "png") {
-            this.logger.log(`Serving dynamic 1x1 transparent PNG fallback`);
-            const transparentPng = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=', 'base64');
-            return {
-              buffer: transparentPng,
-              mimeType: "image/png"
-            };
-          }
-        } catch (fsErr) {
-          this.logger.error(`Error loading fallback local icon: ${fsErr instanceof Error ? fsErr.message : fsErr}`);
+        if (defaultIcon === "false") {
+          throw error;
+        }
+        // P3: Use preloaded default icons instead of sync filesystem reads
+        if (ext === "png" && this.defaultPng) {
+          this.logger.log(`Serving preloaded default fallback: default.png`);
+          return {
+            buffer: this.defaultPng,
+            mimeType: "image/png"
+          };
+        } else if (ext === "svg" && this.defaultSvg) {
+          this.logger.log(`Serving preloaded default fallback: default.svg`);
+          return {
+            buffer: this.defaultSvg,
+            mimeType: "image/svg+xml"
+          };
+        } else if (ext === "png") {
+          this.logger.log(`Serving dynamic 1x1 transparent PNG fallback`);
+          const transparentPng = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=', 'base64');
+          return {
+            buffer: transparentPng,
+            mimeType: "image/png"
+          };
         }
       }
       if (error instanceof HttpError) {

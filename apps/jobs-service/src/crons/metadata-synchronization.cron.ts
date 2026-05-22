@@ -123,12 +123,14 @@ export class MetadataSynchronizationCron implements OnModuleInit {
         return null;
       });
 
-      const results = await this.githubConnector.limitConcurrency(tasks, 5);
+      // P7: Use higher concurrency for authenticated GitHub requests (5000 req/hour limit)
+      const concurrency = this.configService.githubToken ? 15 : 5;
+      const results = await this.githubConnector.limitConcurrency(tasks, concurrency);
       const filtered = results.filter(Boolean);
 
       // Save collection directly into the distributed cache layer
       const cacheKey = `assets-cdn:${network}:${type}`;
-      await this.cacheService.set(cacheKey, filtered);
+      await this.cacheService.set(cacheKey, filtered, 900); // P6: 15 min TTL (matches API service)
 
       this.logger.log(`[Sync] Finished ${network}/${type} (${filtered.length} items cached)`);
     } catch (error: unknown) {
