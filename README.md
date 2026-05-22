@@ -1,4 +1,4 @@
-# MultiversX Assets CDN - API & Metadata Sync Monorepo
+# MultiversX Assets CDN
 
 Unified REST API facade and background synchronization service for serving, proxying, and caching blockchain token, identity, and account metadata in the MultiversX ecosystem.
 
